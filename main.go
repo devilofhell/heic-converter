@@ -39,10 +39,10 @@ func Run(folder string) {
 				isConverting = true
 				log.Printf("Start Converting")
 				err := WalkDeleteHeic(folder)
-			if err != nil {
-				log.Fatalf("%v", err)
-				return
-			}
+				if err != nil {
+					log.Fatalf("%v", err)
+					return
+				}
 				isConverting = false
 			}
 		}
@@ -62,6 +62,7 @@ func Convert(path string, d fs.DirEntry, err error) error {
 		return nil
 	}
 	splitted := strings.Split(path, "/")
+
 	var buf bytes.Buffer
 
 	splittedFileName := strings.Split(d.Name(), ".")
@@ -78,21 +79,17 @@ func Convert(path string, d fs.DirEntry, err error) error {
 		buf.WriteString(splitted[i])
 		buf.WriteString("/")
 	}
-	fmt.Printf("CurrentFile: ./%s\n", path)
+	fmt.Printf("CurrentFile: %s\n", path)
 	fmt.Printf("NewFile    : %s\n", newFileName)
 
 	fmt.Printf("Path       : %s\n", path)
 	fmt.Printf("CurrentFold: %s\n", currentFolder)
 	fmt.Printf("FileName   : %s\n", d.Name())
 
-	baseDir, err := os.Getwd()
-
-	fulDir := filepath.Join(baseDir, currentFolder)
-
-	fmt.Printf("fulDir     : %s\n", fulDir)
+	fmt.Printf("fulDir     : %s\n", currentFolder)
 
 	cmd := exec.Command("convert")
-	cmd.Dir = fulDir
+	cmd.Dir = currentFolder
 	cmd.Args = append(cmd.Args, d.Name(), newFileName)
 	fmt.Printf("%v", cmd.Args)
 	stdErr, cerr := cmd.StderrPipe()
@@ -163,7 +160,7 @@ func WalkDeleteHeic(folder string) error {
 				os.Remove(filepath.Join(folder, item.Name()))
 			}
 		}
-}
+	}
 	return nil
 }
 
