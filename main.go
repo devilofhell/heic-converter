@@ -30,13 +30,18 @@ func main() {
 func Run(folder string) {
 	duration, _ := time.ParseDuration("5s")
 	ticker := time.NewTicker(duration)
+	isConverting := false
 	for {
 		select {
 		case <-ticker.C:
-			err := ConvertFolder(folder)
+			if !isConverting {
+				isConverting = true
+				log.Printf("Start Converting")
 			if err != nil {
 				log.Fatalf("%v", err)
 				return
+			}
+				isConverting = false
 			}
 		}
 	}
