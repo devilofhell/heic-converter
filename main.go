@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -21,14 +22,14 @@ var keepLivePhoto string
 func main() {
 	ReadEnv()
 
-	folder := "./testdata/01"
-
-	ConvertFolder(folder)
-	//Run(folder)
+	Run(watchingFolders)
 }
 
 func Run(folder string) {
-	duration, _ := time.ParseDuration("5s")
+	duration, err := time.ParseDuration(timeBetweenConverting)
+	if err != nil {
+		log.Fatalf("parsing failed: %v, ", err)
+	}
 	ticker := time.NewTicker(duration)
 	isConverting := false
 	for {
@@ -37,6 +38,7 @@ func Run(folder string) {
 			if !isConverting {
 				isConverting = true
 				log.Printf("Start Converting")
+				err := WalkDeleteHeic(folder)
 			if err != nil {
 				log.Fatalf("%v", err)
 				return
@@ -130,5 +132,80 @@ func ReadEnv() {
 	}
 }
 
+func WalkDeleteHeic(folder string) error {
+	moduleFolder, _ := os.ReadDir(folder)
+
+	for _, item := range moduleFolder {
+		if item.IsDir() {
+			err := WalkDeleteHeic(filepath.Join(folder, item.Name()))
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		name, suffix := splitFile(item.Name()) 
+		suffix = strings.ToLower(suffix)
+		if suffix == "heic" {
+			if IsAlreadyConverted(moduleFolder, name) {
+				continue
+			}
+
+			err := Convert(folder, item, nil)
+			if err != nil {
+				return err
+			}
+
+			if keepLivePhoto == "false" {
+				DeleteLivePhoto(moduleFolder, folder, name)
+			}
+
+			if keepOriginals == "false" {
+				os.Remove(filepath.Join(folder, item.Name()))
+			}
+		}
+}
 	return nil
+}
+
+func IsAlreadyConverted(moduleFolder []fs.DirEntry, fileName string) bool {
+	jpgFile := fileName + ".jpg"
+
+	for _, item := range moduleFolder {
+		if item.Name() == jpgFile {
+			return true
+		}
+	}
+	return false
+}
+
+func DeleteLivePhoto(moduleFolder []fs.DirEntry, folderPath, fileName string) error {
+	livePhotoFileMOV := fileName + ".MOV"
+	livePhotoFileMov := fileName + ".mov"
+
+	for _, item := range moduleFolder {
+		if item.Name() == livePhotoFileMOV {
+			file := filepath.Join(folderPath, livePhotoFileMOV)
+			return os.Remove(file)
+		}
+		if item.Name() == livePhotoFileMov {
+			file := filepath.Join(folderPath, livePhotoFileMov)
+			return os.Remove(file)
+		}
+	}
+	return nil
+}
+
+func splitFile(fileName string) (string, string) {
+	splitted := strings.Split(fileName, ".")
+	switch len(splitted) {
+	case 0: 
+		return "", ""
+	case 1:
+		return splitted[0], "" 
+	case 2:
+		return splitted[0], splitted[1]
+	default:
+		length := len(splitted)
+		return path.Join(splitted[0:length-2]...), splitted[length-1]
+	}
 }
