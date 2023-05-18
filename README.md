@@ -9,10 +9,10 @@ this is supposed to be executed on a synology nas, that backups pictures from an
 
 # installation
 
-!(01_docker-heic-converter.png)
-!(02_docker-heic-converter.png)
-!(03_docker-heic-converter.png)
-!(04_docker-heic-converter.png)
-!(05_docker-heic-converter.png)
-!(06_docker-heic-converter.png)
-!(07_docker-heic-converter.png)
+![](01_docker-heic-converter.png)
+![](02_docker-heic-converter.png)
+![](03_docker-heic-converter.png)
+![](04_docker-heic-converter.png)
+![](05_docker-heic-converter.png)
+![](06_docker-heic-converter.png)
+![](07_docker-heic-converter.png)
