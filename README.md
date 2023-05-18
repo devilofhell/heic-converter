@@ -1,4 +1,4 @@
-# heic-coverter
+# heic-converter
 
 this programm will watch a given folder (and subfolders) and convert every .heic / .HEIC files into a .jpg file
 
