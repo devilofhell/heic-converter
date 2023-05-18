@@ -15,7 +15,7 @@ func TestConvertFolder(t *testing.T) {
 	convertingFolder := "./testdata/01"
 	heicList, _ := FindHeicFiles(convertingFolder)
 
-	ConvertFolder(convertingFolder)
+	WalkDeleteHeic(convertingFolder)
 
 	if ContainsHeicFiles(convertingFolder) {
 		t.Errorf("did not delete heic files")

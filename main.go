@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"io/fs"
@@ -43,55 +42,36 @@ func Run(folder string) {
 					log.Fatalf("%v", err)
 					return
 				}
+				log.Printf("Finished Converting")
 				isConverting = false
 			}
 		}
 	}
 }
 
-func ConvertFolder(folder string) error {
-	//files, _ := ioutil.ReadDir(folder)
+// func ConvertFolder(folder string) error {
+// 	//files, _ := ioutil.ReadDir(folder)
 
-	filepath.WalkDir(folder, Convert)
+// 	filepath.WalkDir(folder, Convert)
 
-	return nil
-}
+// 	return nil
+// }
 
-func Convert(path string, d fs.DirEntry, err error) error {
+func ConvertHeic(path string, srcFileName string, d fs.DirEntry, err error) error {
 	if d.IsDir() {
 		return nil
 	}
-	splitted := strings.Split(path, "/")
+	newFileName := fmt.Sprintf("%s.jpg", srcFileName)
 
-	var buf bytes.Buffer
+	// fmt.Printf("CurrentFile: %s\n", filepath.Join(path, d.Name()))
+	// fmt.Printf("NewFile    : %s\n\n", filepath.Join(path, newFileName))
 
-	splittedFileName := strings.Split(d.Name(), ".")
-	newFileName := fmt.Sprintf("%s.jpg", splittedFileName[0])
-
-	var currentFolder string
-
-	for i := 0; i < len(splitted); i++ {
-		if i == len(splitted)-1 {
-			currentFolder = buf.String()
-			buf.WriteString(newFileName)
-			break
-		}
-		buf.WriteString(splitted[i])
-		buf.WriteString("/")
-	}
-	fmt.Printf("CurrentFile: %s\n", path)
-	fmt.Printf("NewFile    : %s\n", newFileName)
-
-	fmt.Printf("Path       : %s\n", path)
-	fmt.Printf("CurrentFold: %s\n", currentFolder)
-	fmt.Printf("FileName   : %s\n", d.Name())
-
-	fmt.Printf("fulDir     : %s\n", currentFolder)
+	// fmt.Printf("splitPath  : %v\n", currentFolder)
+	// fmt.Printf("cmdDir     : %s\n", path)
 
 	cmd := exec.Command("convert")
-	cmd.Dir = currentFolder
+	cmd.Dir = path
 	cmd.Args = append(cmd.Args, d.Name(), newFileName)
-	fmt.Printf("%v", cmd.Args)
 	stdErr, cerr := cmd.StderrPipe()
 	go io.Copy(os.Stderr, stdErr)
 	stdOut, cerr := cmd.StdoutPipe()
@@ -99,8 +79,9 @@ func Convert(path string, d fs.DirEntry, err error) error {
 	cerr = cmd.Run()
 	if cerr != nil {
 		fmt.Printf("ERROR: %v\n", cerr)
-		return nil
+		return cerr
 	}
+	log.Printf("successful converting of [%s  ->  %s]\n", d.Name(), newFileName)
 	return nil
 }
 
@@ -119,6 +100,7 @@ func ReadEnv() {
 		timeBetweenConverting = "1h"
 		log.Printf("no time specified. start converting every 1 hour\n")
 	}
+	log.Printf("start converting every: %s", timeBetweenConverting)
 	if keepOriginals == "" {
 		keepOriginals = "false"
 		log.Printf("KEEP_ORIGNAL not specified. setting default to false")
@@ -140,16 +122,17 @@ func WalkDeleteHeic(folder string) error {
 			}
 			continue
 		}
-		name, suffix := splitFile(item.Name()) 
+		name, suffix := splitFile(item.Name())
 		suffix = strings.ToLower(suffix)
 		if suffix == "heic" {
 			if IsAlreadyConverted(moduleFolder, name) {
 				continue
 			}
 
-			err := Convert(folder, item, nil)
+			err := ConvertHeic(folder, name, item, nil)
 			if err != nil {
-				return err
+				log.Printf("error while converting with current file (%s). dont delete original picture or live-photo: %s", item.Name(), err)
+				continue
 			}
 
 			if keepLivePhoto == "false" {
@@ -157,7 +140,9 @@ func WalkDeleteHeic(folder string) error {
 			}
 
 			if keepOriginals == "false" {
-				os.Remove(filepath.Join(folder, item.Name()))
+				srcFile := filepath.Join(folder, item.Name())
+				log.Printf("delete original file: %s", srcFile)
+				os.Remove(srcFile)
 			}
 		}
 	}
@@ -182,10 +167,12 @@ func DeleteLivePhoto(moduleFolder []fs.DirEntry, folderPath, fileName string) er
 	for _, item := range moduleFolder {
 		if item.Name() == livePhotoFileMOV {
 			file := filepath.Join(folderPath, livePhotoFileMOV)
+			log.Printf("delete live-photo file: %s", file)
 			return os.Remove(file)
 		}
 		if item.Name() == livePhotoFileMov {
 			file := filepath.Join(folderPath, livePhotoFileMov)
+			log.Printf("delete live-photo file: %s", file)
 			return os.Remove(file)
 		}
 	}
@@ -195,14 +182,14 @@ func DeleteLivePhoto(moduleFolder []fs.DirEntry, folderPath, fileName string) er
 func splitFile(fileName string) (string, string) {
 	splitted := strings.Split(fileName, ".")
 	switch len(splitted) {
-	case 0: 
+	case 0:
 		return "", ""
 	case 1:
-		return splitted[0], "" 
+		return splitted[0], ""
 	case 2:
 		return splitted[0], splitted[1]
 	default:
 		length := len(splitted)
-		return path.Join(splitted[0:length-2]...), splitted[length-1]
+		return path.Join(splitted[0 : length-2]...), splitted[length-1]
 	}
 }
