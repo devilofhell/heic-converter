@@ -7,15 +7,14 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"os/user"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
 
 var watchingFolders string
+var targetFolder string
 var timeBetweenConverting string
 var keepOriginals string
 var keepLivePhoto string
@@ -76,6 +75,7 @@ func ConvertHeic(path string, srcFileName string, d fs.DirEntry, err error) erro
 
 func ReadEnv() {
 	watchingFolders = os.Getenv("WATCH")
+	targetFolder = os.Getenv("TARGET")
 	timeBetweenConverting = os.Getenv("TIME_BETWEEN")
 	keepOriginals = os.Getenv("KEEP_ORIGINAL")
 	keepLivePhoto = os.Getenv("KEEP_LIVE_PHOTO")
@@ -86,6 +86,9 @@ func ReadEnv() {
 	}
 	log.Printf("found WATCH folder: %s", watchingFolders)
 
+	if targetFolder == "" {
+		log.Printf("no target specified. converted files are stored in the same folder as the watching folder\n")
+	}
 	if timeBetweenConverting == "" {
 		timeBetweenConverting = "1h"
 		log.Printf("no time specified. start converting every 1 hour\n")
@@ -118,7 +121,7 @@ func WalkDeleteHeic(folder string) error {
 		name, suffix := splitFile(item.Name())
 		suffix = strings.ToLower(suffix)
 		if suffix == "heic" {
-			if IsAlreadyConverted(moduleFolder, name) {
+			if IsAlreadyConverted(folder, name) {
 				continue
 			}
 
@@ -128,8 +131,8 @@ func WalkDeleteHeic(folder string) error {
 				continue
 			}
 
-			if username != "" {
-				UpdateFileOwner(folder, name)
+			if targetFolder != "" {
+				moveFile(folder, name)
 			}
 
 			if keepLivePhoto == "false" {
@@ -146,34 +149,51 @@ func WalkDeleteHeic(folder string) error {
 	return nil
 }
 
-func UpdateFileOwner(path string, srcFileName string) {
-	// Get the userid and groupid from the username
-	var userID, groupID int
-	systemUser, err := user.Lookup(username)
-	if err != nil {
-		log.Printf("Error: %s \n", err)
-		userID = -1
-		groupID = -1
-	} else {
+
+func moveFile(sourceFolder string, filename string) {
+	filename = filename + ".jpg"
+
+	sourcePath := filepath.Join(sourceFolder, filename)
+	destinationPath := filepath.Join(targetFolder, filename)
+
+	if sourceFolder != watchingFolders {
+		addedFolders, _ := strings.CutPrefix(sourceFolder, watchingFolders)
+		destinationDir := filepath.Join(targetFolder, addedFolders)
+		destinationPath = filepath.Join(destinationDir, filename)
+
 		userID, _ = strconv.Atoi(systemUser.Uid)
 		groupID, err = strconv.Atoi(systemUser.Gid)
+		err := os.MkdirAll(destinationDir, os.ModePerm)
 		if err != nil {
-			log.Printf("Error: %s \n", err)
-			groupID = -1
+			log.Println(err)
+			return
 		}
 	}
-	newFile := filepath.Join(path, srcFileName + ".jpg")
-	if err := os.Chown(newFile, userID, groupID); err != nil {
-		log.Printf("Error: %s \n", err)
+
+	if _, err := copy(sourcePath, destinationPath); err != nil {
+		log.Println(err)
 		return
 	}
-	log.Printf("Updated %s: UID=%v, GUID=%v \n", newFile, userID, groupID)
-}
+	log.Printf("moved [%s  ->  %s]\n", sourcePath, destinationPath)
 
-func IsAlreadyConverted(moduleFolder []fs.DirEntry, fileName string) bool {
+	err := os.Remove(sourcePath)
+	if err != nil {
+		log.Println(err)
+	}
+}
+func IsAlreadyConverted(folderPath string, fileName string) bool {
 	jpgFile := fileName + ".jpg"
 
-	for _, item := range moduleFolder {
+	addedFolders, _ := strings.CutPrefix(folderPath, watchingFolders)
+	destinationDir := filepath.Join(targetFolder, addedFolders)
+	targetDirEntries, err := os.ReadDir(destinationDir)
+
+	// Folder does not exist, so file does not exist either
+	if err != nil {
+		return false
+	}
+
+	for _, item := range targetDirEntries {
 		if item.Name() == jpgFile {
 			return true
 		}
@@ -213,4 +233,30 @@ func splitFile(fileName string) (string, string) {
 		length := len(splitted)
 		return path.Join(splitted[0 : length-2]...), splitted[length-1]
 	}
+}
+
+func copy(src, dst string) (int64, error) {
+	sourceFileStat, err := os.Stat(src)
+	sourceFileStat.Sys()
+	if err != nil {
+		return 0, err
+	}
+
+	if !sourceFileStat.Mode().IsRegular() {
+		return 0, fmt.Errorf("%s is not a regular file", src)
+	}
+
+	source, err := os.Open(src)
+	if err != nil {
+		return 0, err
+	}
+	defer source.Close()
+
+	destination, err := os.Create(dst)
+	if err != nil {
+		return 0, err
+	}
+	defer destination.Close()
+	nBytes, err := io.Copy(destination, source)
+	return nBytes, err
 }
