@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -18,7 +19,6 @@ var targetFolder string
 var timeBetweenConverting string
 var keepOriginals string
 var keepLivePhoto string
-var username string
 
 func main() {
 	ReadEnv()
@@ -79,7 +79,6 @@ func ReadEnv() {
 	timeBetweenConverting = os.Getenv("TIME_BETWEEN")
 	keepOriginals = os.Getenv("KEEP_ORIGINAL")
 	keepLivePhoto = os.Getenv("KEEP_LIVE_PHOTO")
-	username = os.Getenv("USERNAME")
 
 	if watchingFolders == "" {
 		log.Fatalf("no folders to watch specified. set the WATCH environment variable. quit programm")
@@ -102,9 +101,11 @@ func ReadEnv() {
 		keepLivePhoto = "true"
 		log.Printf("KEEP_LIVE_PHOTO not specified. setting default to true")
 	}
-	if username == "" {
-		log.Printf("USERNAME not specified. setting default to 'no change'")
 	}
+
+type FileIDs struct {
+	UserID  int
+	GroupID int
 }
 
 func WalkDeleteHeic(folder string) error {
@@ -125,6 +126,8 @@ func WalkDeleteHeic(folder string) error {
 				continue
 			}
 
+			fileIDs := findFileIDs(item)
+
 			err := ConvertHeic(folder, name, item, nil)
 			if err != nil {
 				log.Printf("error while converting with current file (%s). dont delete original picture or live-photo: %s", item.Name(), err)
@@ -132,7 +135,7 @@ func WalkDeleteHeic(folder string) error {
 			}
 
 			if targetFolder != "" {
-				moveFile(folder, name)
+				moveFile(folder, name, fileIDs)
 			}
 
 			if keepLivePhoto == "false" {
@@ -150,7 +153,7 @@ func WalkDeleteHeic(folder string) error {
 }
 
 
-func moveFile(sourceFolder string, filename string) {
+func moveFile(sourceFolder string, filename string, fileIDs FileIDs) {
 	filename = filename + ".jpg"
 
 	sourcePath := filepath.Join(sourceFolder, filename)
@@ -161,16 +164,14 @@ func moveFile(sourceFolder string, filename string) {
 		destinationDir := filepath.Join(targetFolder, addedFolders)
 		destinationPath = filepath.Join(destinationDir, filename)
 
-		userID, _ = strconv.Atoi(systemUser.Uid)
-		groupID, err = strconv.Atoi(systemUser.Gid)
-		err := os.MkdirAll(destinationDir, os.ModePerm)
+		err := MkDirAllAndChown(addedFolders, fileIDs)
 		if err != nil {
 			log.Println(err)
 			return
 		}
 	}
 
-	if _, err := copy(sourcePath, destinationPath); err != nil {
+	if _, err := copy(sourcePath, destinationPath, fileIDs); err != nil {
 		log.Println(err)
 		return
 	}
@@ -181,6 +182,43 @@ func moveFile(sourceFolder string, filename string) {
 		log.Println(err)
 	}
 }
+
+func MkDirAllAndChown(addedFolders string, fileIDs FileIDs) error {
+	addedFoldersSplitted := strings.Split(addedFolders, string(filepath.Separator))
+	walkPath := targetFolder
+	for _, f := range addedFoldersSplitted {
+		if f == "" {
+			continue
+		}
+
+		walkPath = filepath.Join(walkPath, f)
+		if _, err := os.Stat(walkPath); err != nil {
+			if os.IsNotExist(err) {
+				// file does not exist
+				err := os.Mkdir(walkPath, os.ModePerm)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				f, err := os.Open(walkPath)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				err = f.Chown(fileIDs.UserID, fileIDs.GroupID)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				log.Printf("Updated folder %s: UID=%v, GUID=%v \n", walkPath, fileIDs.UserID, fileIDs.GroupID)
+			} else {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func IsAlreadyConverted(folderPath string, fileName string) bool {
 	jpgFile := fileName + ".jpg"
 
@@ -199,6 +237,27 @@ func IsAlreadyConverted(folderPath string, fileName string) bool {
 		}
 	}
 	return false
+}
+
+func findFileIDs(item fs.DirEntry) FileIDs {
+	var result FileIDs
+	info, err := item.Info()
+	if err != nil {
+		result.UserID = -1
+		result.GroupID = -1
+		return result
+	}
+
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		result.UserID = int(stat.Uid)
+		result.GroupID = int(stat.Gid)
+	} else {
+		// we are not in linux, this won't work anyway in windows,
+		// but maybe you want to log warnings
+		result.UserID = -1
+		result.GroupID = -1
+	}
+	return result
 }
 
 func DeleteLivePhoto(moduleFolder []fs.DirEntry, folderPath, fileName string) error {
@@ -235,7 +294,7 @@ func splitFile(fileName string) (string, string) {
 	}
 }
 
-func copy(src, dst string) (int64, error) {
+func copy(src, dst string, fileIDs FileIDs) (int64, error) {
 	sourceFileStat, err := os.Stat(src)
 	sourceFileStat.Sys()
 	if err != nil {
@@ -256,6 +315,11 @@ func copy(src, dst string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	err = destination.Chown(fileIDs.UserID, fileIDs.GroupID)
+	if err != nil {
+		return 0, err
+	}
+	log.Printf("Updated file %s: UID=%v, GUID=%v \n", dst, fileIDs.UserID, fileIDs.GroupID)
 	defer destination.Close()
 	nBytes, err := io.Copy(destination, source)
 	return nBytes, err
