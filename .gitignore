@@ -1,0 +1,12 @@
+# ignore all files without a dot
+*
+!*.*
+
+# ignore all testdata
+testdata/*
+
+# ignore all local scripting files
+*.bat
+*.exe
+c.out
+docker-compose.yml
