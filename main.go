@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -61,11 +60,9 @@ func ConvertHeic(path string, srcFileName string, d fs.DirEntry, err error) erro
 	cmd := exec.Command("convert")
 	cmd.Dir = path
 	cmd.Args = append(cmd.Args, d.Name(), newFileName)
-	stdErr, cerr := cmd.StderrPipe()
-	go io.Copy(os.Stderr, stdErr)
-	stdOut, cerr := cmd.StdoutPipe()
-	go io.Copy(os.Stdout, stdOut)
-	cerr = cmd.Run()
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	cerr := cmd.Run()
 	if cerr != nil {
 		log.Printf("ERROR: %v\n", cerr)
 		return cerr
